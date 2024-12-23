@@ -62,16 +62,16 @@ class LlavaLlamaForCausalLMRMT(LlamaForCausalLM, LlavaMetaForCausalLM):
     
     def create_memory(self, num_mem_tokens):
         self.num_mem_tokens = num_mem_tokens
-        embeddings = self.model.get_input_embeddings()
-        memory_dim = getattr(self.model.config, 'hidden_size', self.model.config.hidden_size)
-        memory_weights = torch.randn((num_mem_tokens, memory_dim)) * embeddings.weight.data.std()
-        self.register_parameter('memory', torch.nn.Parameter(memory_weights, requires_grad=True))
+        embeddings = self.model.get_input_embeddings()  ## 调用模型的方法 get_input_embeddings 获取模型的嵌入层， 用于后续获得嵌入层权重标准差
+        memory_dim = getattr(self.model.config, 'hidden_size', self.model.config.hidden_size)  ## 获取模型的隐藏层维度
+        memory_weights = torch.randn((num_mem_tokens, memory_dim)) * embeddings.weight.data.std()  ## 随机生成一个形状为 (num_mem_tokens, memory_dim) 的张量作为记忆权重，权重的标准差为嵌入层权重的标准差
+        self.register_parameter('memory', torch.nn.Parameter(memory_weights, requires_grad=True))  ## 注册self.memory为模型变量，注册其记忆权重作为模型的一部分，使其在训练过程中被优化
 
         self.read_memory_position = range(num_mem_tokens)
         self.write_memory_position = range(-num_mem_tokens, 0)
     
     def set_memory(self, input_shape):
-        memory = self.memory.repeat(input_shape[0], 1, 1)
+        memory = self.memory.repeat(input_shape[0], 1, 1)  ## 将记忆权重重复 input_shape[0] 次, 形状为 (batch_size, num_mem_tokens, memory_dim)
         return memory
     
     def pad_attention_mask(self, attention_mask, shape):
@@ -107,7 +107,7 @@ class LlavaLlamaForCausalLMRMT(LlamaForCausalLM, LlavaMetaForCausalLM):
         X_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
         memory_state=None
-    ) -> Union[Tuple, CausalLMOutputWithPast]:
+    ) -> Union[Tuple, CausalLMOutputWithPast]:  ## 返回值为 tuple 或 CausalLMOutputWithPast 类型
 
 
         # print("=========forward method before ===========")
@@ -148,13 +148,13 @@ class LlavaLlamaForCausalLMRMT(LlamaForCausalLM, LlavaMetaForCausalLM):
             if self.num_mem_tokens in {0, None}:
                 inputs_embeds = inputs_embeds
             else:
-                inputs_embeds = torch.cat([memory_state, inputs_embeds, memory_state], dim=1)
+                inputs_embeds = torch.cat([memory_state, inputs_embeds, memory_state], dim=1)  ## (batch_size, seq_len + 2 * num_mem_tokens, hidden_dim)
             if attention_mask is not None:
                 attention_mask = self.pad_attention_mask(attention_mask, inputs_embeds.shape)
             if position_ids is not None:
                 position_ids = self.pad_position_ids(position_ids, inputs_embeds.shape)
 
-            model_outputs = super().forward(
+            model_outputs = super().forward(  ## 调用LlamaForCausalLM的 forward 方法
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 # position_ids=position_ids,
@@ -170,12 +170,12 @@ class LlavaLlamaForCausalLMRMT(LlamaForCausalLM, LlavaMetaForCausalLM):
             # outputs: remove memory
             if self.num_mem_tokens not in {0, None}:
                 outputs = CausalLMOutputWithPast()
-                memory_state = model_outputs.hidden_states[-1][:, -self.num_mem_tokens:]
-                outputs["logits"] = model_outputs.logits[:, self.num_mem_tokens:-self.num_mem_tokens]
+                memory_state = model_outputs.hidden_states[-1][:, -self.num_mem_tokens:]  ## 从 model_outputs.hidden_states 中获取最后一层的隐藏状态，并提取出与记忆相关的部分（即最后的 num_mem_tokens 个 token）
+                outputs["logits"] = model_outputs.logits[:, self.num_mem_tokens:-self.num_mem_tokens]  ## 去除输出的 logits 中前后两端与记忆相关的部分
 
-                if output_hidden_states is not None:
+                if output_hidden_states is not None:  ## 如果需要输出隐藏状态
                     outputs["hidden_states"] = [lh[:, self.num_mem_tokens:-self.num_mem_tokens] for lh in model_outputs.hidden_states]
-                if output_attentions is not None:
+                if output_attentions is not None:  ## 如果需要输出注意力权重
                     outputs["attentions"] = model_outputs["attentions"]
 
                 seg_logits.append(model_outputs.logits[:, self.num_mem_tokens:-self.num_mem_tokens])

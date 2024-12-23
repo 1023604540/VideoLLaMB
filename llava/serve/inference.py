@@ -72,10 +72,11 @@ class LiveInfer:
         # else:
         #     assert self.last_ids == 933, f'{self.last_ids} != 933' # HACK, 933 = ]\n
         #     self.last_ids = self._added_stream_generation_ids
+
         if query is not None:
             self.conv.append_message(self.conv.roles[0], DEFAULT_X_TOKEN['VIDEO'] + '\n' + query)
             self.conv.append_message(self.conv.roles[1], None)
-        prompt = self.conv.get_prompt()
+        prompt = self.conv.get_prompt()  ## 构建生成模型所需的对话上下文
         self.last_ids = tokenizer_x_token(prompt, self.tokenizer, X_TOKEN_INDEX['VIDEO'], return_tensors='pt').unsqueeze(0).to('cuda')
         stop_str = self.conv.sep if self.conv.sep_style != SeparatorStyle.TWO else self.conv.sep2
         keywords = [stop_str]
@@ -124,7 +125,7 @@ class LiveInfer:
             if self.query_queue and self.frame_embeds_queue[0][0] > self.query_queue[0][0]:
                 video_time, query = self.query_queue.popleft()
                 return video_time, query
-            
+            ##  遍历帧嵌入队列和查询队列，判断是否需要生成响应
             
             
             video_time, frame_embeds = self.frame_embeds_queue.popleft()
